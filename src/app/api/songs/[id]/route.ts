@@ -15,10 +15,19 @@ function getSupabaseClient() {
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = params;
+    // Await params terlebih dahulu agar ID terbaca dengan benar
+    const resolvedParams = await params;
+    const id = resolvedParams.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "ID lagu tidak valid" },
+        { status: 400 },
+      );
+    }
 
     // 1. Cari data lagu di database
     const song = await prisma.song.findUnique({
@@ -32,7 +41,7 @@ export async function DELETE(
       );
     }
 
-    // 2. Hapus file fisik dari Supabase Storage (opsional, aman dari crash)
+    // 2. Hapus file fisik dari Supabase Storage
     try {
       if (song.src && song.src.includes("/songs/")) {
         const supabase = getSupabaseClient();
