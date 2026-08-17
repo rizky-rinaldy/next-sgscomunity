@@ -2,6 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import { playSound } from "@/utils/sound";
+import { createClient } from "@supabase/supabase-js";
+
+// Setup Supabase Client untuk Frontend (Direct Upload)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface Song {
   id: string;
@@ -16,17 +22,13 @@ export default function RadioRoom() {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [volume, setVolume] = useState(0.4);
 
-  // State untuk pencarian lagu
+  // State pencarian & form upload
   const [searchQuery, setSearchQuery] = useState("");
-
-  // State untuk form upload lagu
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newArtist, setNewArtist] = useState("");
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // State untuk loading saat menghapus lagu
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -39,10 +41,7 @@ export default function RadioRoom() {
     try {
       const res = await fetch("/api/songs");
       const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        console.error("API GET songs bukan JSON");
-        return;
-      }
+      if (!contentType || !contentType.includes("application/json")) return;
       const data = await res.json();
       if (data.success && data.songs.length > 0) {
         setPlaylist(data.songs);
@@ -102,9 +101,8 @@ export default function RadioRoom() {
     }
   };
 
-  // Fungsi untuk menghapus lagu
   const handleDeleteSong = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Mencegah agar card tidak ikut ter-klik (memutar lagu) saat tombol hapus ditekan
+    e.stopPropagation();
     playSound("click");
 
     if (!confirm("Yakin ingin menghapus lagu ini dari playlist warkop?"))
@@ -119,12 +117,11 @@ export default function RadioRoom() {
 
       if (data.success) {
         playSound("success");
-        // Jika lagu yang sedang diputar kebetulan yang dihapus, hentikan atau pindah index
         if (currentTrack?.id === id) {
           setIsPlaying(false);
           if (audioRef.current) audioRef.current.pause();
         }
-        fetchSongs(); // Refresh ulang playlist dari database
+        fetchSongs();
       } else {
         alert("Gagal menghapus: " + data.error);
       }
@@ -152,16 +149,42 @@ export default function RadioRoom() {
     }
 
     setLoading(true);
-    const formData = new FormData();
-    formData.append("title", newTitle);
-    formData.append("artist", newArtist);
-    formData.append("file", fileToUpload);
 
     try {
+      // 1. Sanitasi nama file agar aman dari karakter khusus
+      const cleanFileName = fileToUpload.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const fileName = `${Date.now()}-${cleanFileName}`;
+
+      // 2. Upload langsung dari browser ke Supabase Storage (Bypass Vercel limit)
+      const { error: uploadError } = await supabase.storage
+        .from("songs")
+        .upload(fileName, fileToUpload, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error("Gagal upload ke Supabase: " + uploadError.message);
+      }
+
+      // 3. Ambil Public URL
+      const { data: publicUrlData } = supabase.storage
+        .from("songs")
+        .getPublicUrl(fileName);
+
+      const fileUrl = publicUrlData.publicUrl;
+
+      // 4. Kirim metadata (Judul, Artis, URL) ke backend database kita
       const res = await fetch("/api/songs", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle,
+          artist: newArtist,
+          src: fileUrl,
+        }),
       });
+
       const data = await res.json();
 
       if (data.success) {
@@ -172,17 +195,16 @@ export default function RadioRoom() {
         setShowAddForm(false);
         fetchSongs();
       } else {
-        alert("Gagal upload lagu: " + data.error);
+        alert("Gagal menyimpan lagu: " + data.error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error upload song:", error);
-      alert("Terjadi kesalahan jaringan saat upload.");
+      alert(error.message || "Terjadi kesalahan saat upload.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter daftar lagu berdasarkan pencarian (judul atau artis)
   const filteredSongs = playlist.filter(
     (song) =>
       song.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -236,7 +258,7 @@ export default function RadioRoom() {
           className="bg-gray-950/80 border border-indigo-800/60 p-4 rounded-2xl space-y-3"
         >
           <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
-            📂 Upload File Musik MP3 Langsung ke Server
+            📂 Upload File Musik MP3 (Mendukung File Besar)
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <input
@@ -266,7 +288,7 @@ export default function RadioRoom() {
             className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 rounded-xl transition shadow-md"
           >
             {loading
-              ? "Mengunggah File MP3..."
+              ? "Mengunggah File MP3 ke Supabase..."
               : "🚀 Upload & Simpan ke Playlist"}
           </button>
         </form>
@@ -279,7 +301,6 @@ export default function RadioRoom() {
             Daftar Playlist Warkop ({playlist.length} Lagu):
           </label>
 
-          {/* Input Kotak Pencarian */}
           <input
             type="text"
             placeholder="🔍 Cari judul atau artis..."
@@ -289,7 +310,6 @@ export default function RadioRoom() {
           />
         </div>
 
-        {/* Grid List Lagu yang Tersaring */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
           {filteredSongs.length > 0 ? (
             filteredSongs.map((track) => {
@@ -312,7 +332,6 @@ export default function RadioRoom() {
                     </div>
                   </div>
 
-                  {/* Tombol Hapus Lagu */}
                   <button
                     onClick={(e) => handleDeleteSong(track.id, e)}
                     disabled={isDeleting}
@@ -326,7 +345,7 @@ export default function RadioRoom() {
             })
           ) : (
             <div className="col-span-full text-center py-4 text-xs text-gray-500 italic">
-              Lagu "{searchQuery}" tidak ditemukan, Bro! Coba cari yang lain.
+              Lagu "{searchQuery}" tidak ditemukan, Bro!
             </div>
           )}
         </div>

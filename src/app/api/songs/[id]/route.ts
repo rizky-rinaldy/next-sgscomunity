@@ -18,7 +18,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // Await params terlebih dahulu agar ID terbaca dengan benar
     const resolvedParams = await params;
     const id = resolvedParams.id;
 
@@ -29,7 +28,6 @@ export async function DELETE(
       );
     }
 
-    // 1. Cari data lagu di database
     const song = await prisma.song.findUnique({
       where: { id },
     });
@@ -41,7 +39,7 @@ export async function DELETE(
       );
     }
 
-    // 2. Hapus file fisik dari Supabase Storage
+    // Hapus file fisik dari Supabase Storage
     try {
       if (song.src && song.src.includes("/songs/")) {
         const supabase = getSupabaseClient();
@@ -58,7 +56,7 @@ export async function DELETE(
       );
     }
 
-    // 3. Hapus data dari database Prisma
+    // Hapus dari database Prisma
     await prisma.song.delete({
       where: { id },
     });
