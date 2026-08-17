@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma"; // Pakai jalur tunggal dari lib/prisma
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
 
-// GET: Ambil semua daftar lagu
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
+
 export async function GET() {
   try {
     const songs = await prisma.song.findMany({
@@ -12,11 +15,10 @@ export async function GET() {
     return NextResponse.json({ success: true, songs });
   } catch (error) {
     console.error("GET Songs Error:", error);
-    return NextResponse.json({ success: true, songs: [] }); // Kembalikan array kosong agar aman
+    return NextResponse.json({ success: true, songs: [] });
   }
 }
 
-// POST: Upload file MP3 dan simpan datanya
 export async function POST(request: Request) {
   try {
     const data = await request.formData();
@@ -34,25 +36,33 @@ export async function POST(request: Request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Pastikan folder public/audio ada (kalau belum, buat otomatis)
-    const uploadDir = path.join(process.cwd(), "public", "audio");
-    try {
-      await mkdir(uploadDir, { recursive: true });
-    } catch (e) {
-      // Abaikan jika sudah ada
-    }
-
-    // Buat nama file unik
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const filename = `${uniqueSuffix}-${file.name.replace(/\s+/g, "_")}`;
-    const filepath = path.join(uploadDir, filename);
 
-    // Simpan file ke server
-    await writeFile(filepath, buffer);
+    // Upload langsung ke Supabase Storage (Bucket: songs)
+    const { error: uploadError } = await supabase.storage
+      .from("songs")
+      .upload(filename, buffer, {
+        contentType: file.type,
+        upsert: false,
+      });
 
-    const src = `/audio/${filename}`;
+    if (uploadError) {
+      console.error("Supabase Storage Error:", uploadError);
+      return NextResponse.json(
+        { success: false, error: "Gagal mengunggah file ke cloud storage" },
+        { status: 500 },
+      );
+    }
 
-    // Simpan ke database Prisma menggunakan prisma dari lib
+    // Ambil Public URL
+    const { data: publicUrlData } = supabase.storage
+      .from("songs")
+      .getPublicUrl(filename);
+
+    const src = publicUrlData.publicUrl;
+
+    // Simpan data lagu ke database Prisma
     const newSong = await prisma.song.create({
       data: { title, artist, src },
     });
@@ -61,7 +71,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Upload Song Error:", error);
     return NextResponse.json(
-      { success: false, error: "Gagal mengunggah lagu ke server" },
+      { success: false, error: "Terjadi kesalahan pada server" },
       { status: 500 },
     );
   }
