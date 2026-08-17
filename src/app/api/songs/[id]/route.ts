@@ -20,7 +20,7 @@ export async function DELETE(
   try {
     const { id } = params;
 
-    // 1. Cari data lagu di database Prisma berdasarkan ID
+    // 1. Cari data lagu di database
     const song = await prisma.song.findUnique({
       where: { id },
     });
@@ -32,24 +32,24 @@ export async function DELETE(
       );
     }
 
-    // 2. Hapus file fisiknya dari Supabase Storage jika URL-nya valid
+    // 2. Hapus file fisik dari Supabase Storage (opsional, aman dari crash)
     try {
-      const supabase = getSupabaseClient();
-      // Mengambil nama file dari URL public (contoh: .../songs/filename.mp3)
-      const urlParts = song.src.split("/songs/");
-      if (urlParts.length > 1) {
-        const fileName = urlParts[1];
-        await supabase.storage.from("songs").remove([fileName]);
+      if (song.src && song.src.includes("/songs/")) {
+        const supabase = getSupabaseClient();
+        const urlParts = song.src.split("/songs/");
+        if (urlParts.length > 1) {
+          const fileName = decodeURIComponent(urlParts[1].split("?")[0]);
+          await supabase.storage.from("songs").remove([fileName]);
+        }
       }
     } catch (storageError) {
       console.error(
-        "Gagal menghapus file dari Supabase Storage:",
+        "Warning: Gagal hapus file dari Supabase Storage:",
         storageError,
       );
-      // Lanjutkan proses hapus database meskipun file di storage gagal terhapus
     }
 
-    // 3. Hapus data dari database PostgreSQL menggunakan Prisma
+    // 3. Hapus data dari database Prisma
     await prisma.song.delete({
       where: { id },
     });
@@ -58,10 +58,13 @@ export async function DELETE(
       success: true,
       message: "Lagu berhasil dihapus",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Delete Song Error:", error);
     return NextResponse.json(
-      { success: false, error: "Terjadi kesalahan saat menghapus lagu" },
+      {
+        success: false,
+        error: error.message || "Terjadi kesalahan saat menghapus lagu",
+      },
       { status: 500 },
     );
   }
