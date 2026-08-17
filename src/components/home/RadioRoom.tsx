@@ -26,6 +26,9 @@ export default function RadioRoom() {
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // State untuk loading saat menghapus lagu
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -92,11 +95,44 @@ export default function RadioRoom() {
 
   const handleSelectTrack = (trackId: string) => {
     playSound("click");
-    // Cari index asli dari playlist berdasarkan ID lagu yang diklik
     const index = playlist.findIndex((s) => s.id === trackId);
     if (index !== -1) {
       setCurrentTrackIndex(index);
       setIsPlaying(true);
+    }
+  };
+
+  // Fungsi untuk menghapus lagu
+  const handleDeleteSong = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Mencegah agar card tidak ikut ter-klik (memutar lagu) saat tombol hapus ditekan
+    playSound("click");
+
+    if (!confirm("Yakin ingin menghapus lagu ini dari playlist warkop?"))
+      return;
+
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/songs/${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        playSound("success");
+        // Jika lagu yang sedang diputar kebetulan yang dihapus, hentikan atau pindah index
+        if (currentTrack?.id === id) {
+          setIsPlaying(false);
+          if (audioRef.current) audioRef.current.pause();
+        }
+        fetchSongs(); // Refresh ulang playlist dari database
+      } else {
+        alert("Gagal menghapus: " + data.error);
+      }
+    } catch (error) {
+      console.error("Error delete song:", error);
+      alert("Terjadi kesalahan jaringan saat menghapus.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -258,21 +294,34 @@ export default function RadioRoom() {
           {filteredSongs.length > 0 ? (
             filteredSongs.map((track) => {
               const isSelected = currentTrack?.id === track.id;
+              const isDeleting = deletingId === track.id;
               return (
-                <button
+                <div
                   key={track.id}
                   onClick={() => handleSelectTrack(track.id)}
-                  className={`text-left px-3 py-2.5 rounded-xl text-xs font-bold transition border ${
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
                     isSelected
                       ? "bg-indigo-600 text-white border-indigo-400 shadow-md"
                       : "bg-gray-900/80 text-gray-400 border-gray-800 hover:bg-gray-800 hover:text-white"
                   }`}
                 >
-                  <div className="truncate">{track.title}</div>
-                  <div className="text-[10px] opacity-70 font-normal">
-                    {track.artist}
+                  <div className="truncate pr-2">
+                    <div className="truncate">{track.title}</div>
+                    <div className="text-[10px] opacity-70 font-normal">
+                      {track.artist}
+                    </div>
                   </div>
-                </button>
+
+                  {/* Tombol Hapus Lagu */}
+                  <button
+                    onClick={(e) => handleDeleteSong(track.id, e)}
+                    disabled={isDeleting}
+                    title="Hapus lagu"
+                    className="bg-red-900/60 hover:bg-red-700 text-red-200 hover:text-white p-1.5 rounded-lg transition text-[10px] shrink-0"
+                  >
+                    {isDeleting ? "..." : "🗑️"}
+                  </button>
+                </div>
               );
             })
           ) : (
