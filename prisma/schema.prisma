@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. TABEL PENGGUNA (USER) & AUTH
+// ==========================================
+model User {
+  id          String   @id @default(uuid())
+  phone       String   @unique
+  name        String
+  bio         String?
+  image       String?
+  instagram   String?  // Kolom Instagram
+  tiktok      String?  // Kolom TikTok
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  posts       Post[]
+  comments    Comment[]
+  reactions   Reaction[]
+  galleries   Gallery[]
+  chats       Chat[]
+  badges      UserBadge[]
+  eventAttend EventAttendee[]
+
+  // Relasi ke CoffeeScore (skor clicker kopi)
+  coffeeScore CoffeeScore? 
+
+  // Relasi ke Quote (kata-kata maut yang disumbangkan)
+  quotes      Quote[]
+}
+
+// ==========================================
+// 2. TABEL SOSIAL & INTERAKSI (FEED)
+// ==========================================
+model Post {
+  id          String      @id @default(cuid())
+  content     String      // Isi postingan / teks random
+  imageUrl    String?     // Opsional: lampiran gambar/meme
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  authorId    String
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  comments    Comment[]
+  reactions   Reaction[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model Reaction {
+  id     String @id @default(cuid())
+  type   String // Misal: "LIKE", "LOVE", "LAUGH", "FIRE"
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId]) // 1 user hanya bisa 1 reaksi per post
+}
+
+// ==========================================
+// 3. TABEL ACARA / GATHERING
+// ==========================================
+model Event {
+  id          String          @id @default(cuid())
+  title       String
+  description String
+  location    String          // Link Discord atau lokasi offline
+  date        DateTime        // Waktu pelaksanaan
+  createdAt   DateTime        @default(now())
+
+  attendees   EventAttendee[]
+}
+
+model EventAttendee {
+  id      String @id @default(cuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+// ==========================================
+// 4. TABEL PENGURUS (TEAM MEMBER)
+// ==========================================
+model TeamMember {
+  id           String   @id @default(cuid())
+  name         String
+  role         String   // Jabatan (Contoh: "Ketua Komunitas", "Divisi Huru-hara")
+  nickname     String?  // Nama panggilan unik
+  bio          String?  // Deskripsi singkat
+  avatarUrl    String?  // Foto profil pengurus
+  funFact      String?  // Kebiasaan random / fakta unik
+  order        Int      @default(0) // Urutan tampil di website
+  
+  // Kontak / Medsos
+  githubUrl    String?
+  instagramUrl String?
+  discordTag   String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ==========================================
+// 5. TABEL GALERI & DOKUMENTASI
+// ==========================================
+model Gallery {
+  id          String   @id @default(cuid())
+  title       String   // Judul foto/kegiatan
+  imageUrl    String   // Link gambar
+  description String?  // Cerita dibalik foto
+  category    String?  // Misal: "Kopdar", "Meme", "Online"
+  createdAt   DateTime @default(now())
+
+  uploaderId  String
+  uploader    User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 6. TABEL CHAT CEPAT / SHOUTBOX
+// ==========================================
+model Chat {
+  id        String   @id @default(cuid())
+  message   String   // Pesan singkat / sapaan
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 7. TABEL BADGE / PENCAPAIAN MEMBER
+// ==========================================
+model Badge {
+  id          String      @id @default(cuid())
+  name        String      // Nama badge (Misal: "Sultan Meme")
+  icon        String      // URL ikon atau emoji
+  description String?      
+  
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId  String
+  badge    Badge  @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+}
+
+// ==========================================
+// 8. TABEL TAMBAHAN (STATISTIK & PENGATURAN)
+// ==========================================
+model Stat {
+  id    String @id @default(cuid())
+  key   String @unique // Penanda, contoh: "global_cheers"
+  value Int    @default(0) // Angka total hitungan
+}
+
+model SystemConfig {
+  id          String  @id @default("config")
+  maintenance Boolean @default(false)
+}
+
+model Song {
+  id        String   @id @default(cuid())
+  title     String
+  artist    String
+  src       String   // URL file MP3 atau link stream audio
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model CoffeeScore {
+  id        String   @id @default(uuid())
+  score     Int      @default(0)
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
+}
+
+model Quote {
+  id        String   @id @default(uuid())
+  text      String
+  author    String
+  createdAt DateTime @default(now())
+  
+  // Hubungkan quote ke User yang membuatnya (opsional, jika ingin dilacak berdasarkan user)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
