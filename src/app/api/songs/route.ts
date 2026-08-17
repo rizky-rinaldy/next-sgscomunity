@@ -44,7 +44,9 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(bytes);
 
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const filename = `${uniqueSuffix}-${file.name.replace(/\s+/g, "_")}`;
+    // KODE BARU (Aman untuk Supabase Storage):
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const filename = `${uniqueSuffix}-${cleanFileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("songs")
