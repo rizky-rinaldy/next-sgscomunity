@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
 
-// Fungsi pembantu untuk membuat client Supabase saat runtime saja
+// Fungsi pembantu (Lazy load) agar tidak error saat build
 function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,7 +28,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabaseClient(); // Dipanggil di dalam fungsi, aman dari build-time error
+    const supabase = getSupabaseClient(); // Dipanggil di dalam fungsi saat runtime
     const data = await request.formData();
     const title = data.get("title") as string;
     const artist = data.get("artist") as string;
