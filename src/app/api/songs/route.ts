@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+// Fungsi pembantu untuk membuat client Supabase saat runtime saja
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase environment variables are missing");
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 export async function GET() {
   try {
@@ -21,6 +28,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const supabase = getSupabaseClient(); // Dipanggil di dalam fungsi, aman dari build-time error
     const data = await request.formData();
     const title = data.get("title") as string;
     const artist = data.get("artist") as string;
@@ -39,7 +47,6 @@ export async function POST(request: Request) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const filename = `${uniqueSuffix}-${file.name.replace(/\s+/g, "_")}`;
 
-    // Upload langsung ke Supabase Storage (Bucket: songs)
     const { error: uploadError } = await supabase.storage
       .from("songs")
       .upload(filename, buffer, {
@@ -55,14 +62,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Ambil Public URL
     const { data: publicUrlData } = supabase.storage
       .from("songs")
       .getPublicUrl(filename);
 
     const src = publicUrlData.publicUrl;
 
-    // Simpan data lagu ke database Prisma
     const newSong = await prisma.song.create({
       data: { title, artist, src },
     });
